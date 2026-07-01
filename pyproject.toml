@@ -1,0 +1,17 @@
+[project]
+name = "snowflake-to-bigquery-migration-toolkit"
+version = "0.1.0"
+description = "Production toolkit for migrating Snowflake data warehouses to BigQuery"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+[project.scripts]
+sf2bq = "src.cli:cli"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

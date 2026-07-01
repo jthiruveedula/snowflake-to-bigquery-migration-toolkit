@@ -1,0 +1,864 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Snowflake → BigQuery Migration Toolkit</title>
+<meta name="description" content="A production-grade Python toolkit for migrating Snowflake data warehouses to BigQuery: assessment, SQL translation, schema creation, transfer, sync, validation, and cutover." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>❄️</text></svg>" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Exo:wght@300;400;500;600;700;800&family=Roboto+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" />
+<style>
+  :root{
+    --bg:#0a0f1c;
+    --bg-elevated:#0f172a;
+    --surface:#131c2e;
+    --surface-glass:rgba(19,28,46,0.55);
+    --border:#27344a;
+    --border-strong:#3b4a66;
+    --fg:#f8fafc;
+    --fg-muted:#9aa7bd;
+    --fg-dim:#6b7a93;
+    --accent-blue:#3b82f6;
+    --accent-cyan:#22d3ee;
+    --accent-green:#22c55e;
+    --accent-violet:#8b5cf6;
+    --gradient: linear-gradient(135deg,#3b82f6 0%,#22d3ee 45%,#22c55e 100%);
+    --gradient-soft: linear-gradient(135deg, rgba(59,130,246,0.18), rgba(34,211,238,0.12), rgba(34,197,94,0.18));
+    --radius:16px;
+    --radius-sm:10px;
+    --shadow-glow: 0 0 40px rgba(59,130,246,0.15);
+    --font-head:'Exo',ui-sans-serif,system-ui,sans-serif;
+    --font-mono:'Roboto Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    background:var(--bg);
+    background-image:
+      radial-gradient(circle at 15% 0%, rgba(59,130,246,0.12), transparent 45%),
+      radial-gradient(circle at 85% 15%, rgba(34,197,94,0.10), transparent 40%),
+      radial-gradient(circle at 50% 100%, rgba(139,92,246,0.08), transparent 50%);
+    color:var(--fg);
+    font-family:var(--font-head);
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--accent-cyan);text-decoration:none;}
+  a:hover{text-decoration:underline;}
+  h1,h2,h3,h4{font-family:var(--font-head);font-weight:700;letter-spacing:-0.01em;margin:0 0 .5em;}
+  p{color:var(--fg-muted);margin:0 0 1em;}
+  code,pre{font-family:var(--font-mono);}
+  ::selection{background:rgba(34,211,238,0.3);}
+
+  :focus-visible{outline:2px solid var(--accent-cyan);outline-offset:3px;border-radius:4px;}
+
+  .skip-link{
+    position:absolute;left:-9999px;top:0;background:var(--accent-blue);color:#fff;padding:.6em 1em;border-radius:8px;z-index:1000;
+  }
+  .skip-link:focus{left:1em;top:1em;}
+
+  /* ---------- Layout ---------- */
+  .shell{display:flex;max-width:1440px;margin:0 auto;}
+  .sidebar{
+    position:sticky;top:0;height:100vh;width:260px;flex-shrink:0;
+    border-right:1px solid var(--border);
+    padding:1.5rem 1rem;
+    overflow-y:auto;
+    display:flex;flex-direction:column;gap:1.5rem;
+  }
+  .brand{display:flex;align-items:center;gap:.6rem;padding:0 .5rem;}
+  .brand-mark{
+    width:34px;height:34px;border-radius:9px;background:var(--gradient);
+    display:flex;align-items:center;justify-content:center;font-weight:800;color:#04121f;flex-shrink:0;
+  }
+  .brand-text{font-weight:700;font-size:.95rem;line-height:1.2;}
+  .brand-text span{display:block;color:var(--fg-dim);font-size:.7rem;font-weight:500;}
+
+  nav.toc{display:flex;flex-direction:column;gap:.15rem;}
+  nav.toc .group-label{
+    font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--fg-dim);
+    margin:1rem .6rem .4rem;font-weight:600;
+  }
+  nav.toc a{
+    color:var(--fg-muted);font-size:.86rem;padding:.45rem .6rem;border-radius:8px;
+    display:flex;align-items:center;gap:.5rem;transition:background .15s ease, color .15s ease;
+  }
+  nav.toc a:hover{background:var(--surface);color:var(--fg);text-decoration:none;}
+  nav.toc a.active{background:var(--gradient-soft);color:var(--fg);border:1px solid var(--border);}
+  nav.toc a .dot{width:6px;height:6px;border-radius:50%;background:var(--fg-dim);flex-shrink:0;}
+  nav.toc a.active .dot{background:var(--accent-cyan);box-shadow:0 0 8px var(--accent-cyan);}
+
+  .menu-toggle{
+    display:none;position:fixed;top:1rem;right:1rem;z-index:200;
+    width:44px;height:44px;border-radius:50%;border:1px solid var(--border-strong);
+    background:var(--surface-glass);backdrop-filter:blur(10px);color:var(--fg);
+    align-items:center;justify-content:center;cursor:pointer;
+  }
+
+  main{flex:1;min-width:0;padding:0 0 4rem;}
+  .container{max-width:980px;margin:0 auto;padding:0 2rem;}
+
+  /* ---------- Hero ---------- */
+  .hero{
+    position:relative;padding:5rem 2rem 4rem;overflow:hidden;
+    border-bottom:1px solid var(--border);
+  }
+  .hero::before{
+    content:"";position:absolute;inset:-20% -10%;
+    background:
+      radial-gradient(circle at 20% 30%, rgba(59,130,246,0.25), transparent 35%),
+      radial-gradient(circle at 80% 20%, rgba(34,197,94,0.2), transparent 35%),
+      radial-gradient(circle at 50% 80%, rgba(139,92,246,0.18), transparent 40%);
+    filter:blur(40px);
+    animation:drift 18s ease-in-out infinite alternate;
+    z-index:0;
+  }
+  @media (prefers-reduced-motion:no-preference){
+    .hero::before{animation:drift 18s ease-in-out infinite alternate;}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .hero::before{animation:none;}
+  }
+  @keyframes drift{
+    0%{transform:translate(0,0) scale(1);}
+    100%{transform:translate(3%,-3%) scale(1.08);}
+  }
+  .hero-inner{position:relative;z-index:1;max-width:880px;}
+  .pill{
+    display:inline-flex;align-items:center;gap:.5rem;
+    border:1px solid var(--border-strong);background:var(--surface-glass);backdrop-filter:blur(8px);
+    padding:.4rem .9rem;border-radius:999px;font-size:.78rem;color:var(--fg-muted);margin-bottom:1.2rem;
+  }
+  .pill .dot{width:7px;height:7px;border-radius:50%;background:var(--accent-green);box-shadow:0 0 10px var(--accent-green);}
+  .hero h1{
+    font-size:clamp(2.2rem,5vw,3.4rem);line-height:1.08;margin-bottom:1rem;
+    background:linear-gradient(135deg,#fff 30%, #aee5ff 60%, #9ef5c4 100%);
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;
+  }
+  .hero p.lead{font-size:1.1rem;color:var(--fg-muted);max-width:640px;}
+  .hero-ctas{display:flex;gap:.9rem;margin-top:1.8rem;flex-wrap:wrap;}
+  .btn{
+    display:inline-flex;align-items:center;gap:.5rem;padding:.75rem 1.3rem;border-radius:10px;
+    font-weight:600;font-size:.92rem;cursor:pointer;border:1px solid transparent;transition:transform .15s ease, box-shadow .15s ease;
+  }
+  .btn:hover{transform:translateY(-2px);text-decoration:none;}
+  .btn-primary{background:var(--gradient);color:#04121f;box-shadow:var(--shadow-glow);}
+  .btn-ghost{background:var(--surface-glass);border-color:var(--border-strong);color:var(--fg);backdrop-filter:blur(8px);}
+
+  .stat-row{display:flex;gap:2rem;margin-top:2.5rem;flex-wrap:wrap;}
+  .stat-row div{display:flex;flex-direction:column;}
+  .stat-row strong{font-size:1.5rem;font-family:var(--font-mono);}
+  .stat-row span{font-size:.78rem;color:var(--fg-dim);}
+
+  /* ---------- Sections ---------- */
+  section{padding:3.5rem 0;border-bottom:1px solid var(--border);}
+  section:last-of-type{border-bottom:none;}
+  .section-head{margin-bottom:2rem;}
+  .section-head .kicker{
+    font-size:.78rem;text-transform:uppercase;letter-spacing:.1em;color:var(--accent-cyan);font-weight:600;
+  }
+  .section-head h2{font-size:1.9rem;margin-top:.4rem;}
+  .section-head p{max-width:680px;}
+
+  /* ---------- Lifecycle diagram ---------- */
+  .lifecycle{
+    display:grid;grid-template-columns:repeat(7,1fr);gap:.75rem;margin-top:2rem;
+  }
+  .lifecycle .phase{
+    position:relative;border:1px solid var(--border);background:var(--surface);
+    border-radius:var(--radius-sm);padding:1.1rem .8rem;text-align:center;
+    transition:transform .2s ease, border-color .2s ease;
+  }
+  .lifecycle .phase:hover{transform:translateY(-4px);border-color:var(--accent-cyan);}
+  .lifecycle .phase .num{
+    width:28px;height:28px;border-radius:50%;background:var(--gradient);color:#04121f;font-weight:700;
+    display:flex;align-items:center;justify-content:center;margin:0 auto .6rem;font-size:.8rem;font-family:var(--font-mono);
+  }
+  .lifecycle .phase h4{font-size:.82rem;margin-bottom:.2rem;}
+  .lifecycle .phase small{color:var(--fg-dim);font-size:.7rem;}
+  .lifecycle .arrow{display:none;}
+  @media (max-width:880px){
+    .lifecycle{grid-template-columns:1fr;}
+  }
+
+  /* ---------- Code blocks ---------- */
+  .codeblock{
+    position:relative;background:#0d1320;border:1px solid var(--border);border-radius:var(--radius-sm);
+    overflow:hidden;margin:1.2rem 0;
+  }
+  .codeblock .bar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:.55rem .9rem;border-bottom:1px solid var(--border);background:rgba(255,255,255,0.02);
+    font-family:var(--font-mono);font-size:.72rem;color:var(--fg-dim);
+  }
+  .codeblock pre{margin:0;padding:1rem;overflow-x:auto;font-size:.84rem;}
+  .codeblock code{background:none;}
+  .copy-btn{
+    background:var(--surface);border:1px solid var(--border-strong);color:var(--fg-muted);
+    font-size:.7rem;padding:.25rem .6rem;border-radius:6px;cursor:pointer;font-family:var(--font-head);
+  }
+  .copy-btn:hover{color:var(--fg);border-color:var(--accent-cyan);}
+
+  /* ---------- Module cards ---------- */
+  .modules-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1.2rem;}
+  .module-card{
+    background:var(--surface-glass);backdrop-filter:blur(10px);
+    border:1px solid var(--border);border-radius:var(--radius);padding:1.4rem;
+    transition:transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+    cursor:pointer;
+  }
+  .module-card:hover{transform:translateY(-4px);border-color:var(--accent-blue);box-shadow:0 10px 30px rgba(59,130,246,0.15);}
+  .module-card .file{font-family:var(--font-mono);font-size:.78rem;color:var(--accent-cyan);}
+  .module-card h3{font-size:1.1rem;margin:.3rem 0 .5rem;}
+  .module-card p{font-size:.88rem;margin-bottom:.8rem;}
+  .badge{
+    display:inline-block;font-size:.68rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;
+    padding:.2rem .55rem;border-radius:999px;border:1px solid var(--border-strong);color:var(--fg-muted);
+  }
+
+  .module-detail{padding-top:1rem;}
+  .module-detail h3{font-size:1.5rem;display:flex;align-items:center;gap:.6rem;}
+  .module-detail .file-path{font-family:var(--font-mono);color:var(--accent-cyan);font-size:.9rem;}
+  .kv-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;margin:1.2rem 0;}
+  .kv-grid .kv{border:1px solid var(--border);border-radius:var(--radius-sm);padding:.9rem 1rem;background:var(--surface);}
+  .kv-grid .kv h5{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--fg-dim);margin:0 0 .4rem;}
+  .kv-grid .kv ul{margin:0;padding-left:1.1rem;font-size:.85rem;color:var(--fg-muted);}
+  .kv-grid .kv ul li{margin-bottom:.25rem;}
+
+  /* ---------- Quick start ---------- */
+  .steps{display:flex;flex-direction:column;gap:.5rem;counter-reset:step;}
+  .step{display:grid;grid-template-columns:32px 1fr;gap:1rem;align-items:start;}
+  .step .num{
+    counter-increment:step;width:32px;height:32px;border-radius:50%;border:1px solid var(--border-strong);
+    display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:.8rem;color:var(--accent-cyan);
+  }
+
+  table{width:100%;border-collapse:collapse;margin:1rem 0;font-size:.88rem;}
+  th,td{padding:.6rem .8rem;border-bottom:1px solid var(--border);text-align:left;}
+  th{color:var(--fg-dim);text-transform:uppercase;font-size:.7rem;letter-spacing:.05em;}
+  td{color:var(--fg-muted);}
+  td code{color:var(--accent-cyan);}
+
+  footer{padding:3rem 2rem;text-align:center;color:var(--fg-dim);font-size:.85rem;}
+  footer a{color:var(--fg-muted);}
+
+  @media (max-width:1024px){
+    .sidebar{position:fixed;left:0;top:0;height:100vh;z-index:150;background:var(--bg-elevated);
+      transform:translateX(-100%);transition:transform .25s ease;width:280px;box-shadow:20px 0 60px rgba(0,0,0,.4);}
+    .sidebar.open{transform:translateX(0);}
+    .menu-toggle{display:flex;}
+    .container{padding:0 1.2rem;}
+    .hero{padding:7rem 1.2rem 3rem;}
+  }
+
+  noscript .menu-toggle{display:none;}
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<button class="menu-toggle" id="menuToggle" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="sidebar">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+</button>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar" aria-label="Documentation navigation">
+    <div class="brand">
+      <div class="brand-mark">S→B</div>
+      <div class="brand-text">SF2BQ Toolkit<span>Migration Accelerator</span></div>
+    </div>
+
+    <nav class="toc" aria-label="Table of contents">
+      <a href="#overview"><span class="dot"></span>Overview</a>
+      <a href="#quickstart"><span class="dot"></span>Quick Start</a>
+      <a href="#lifecycle"><span class="dot"></span>Migration Lifecycle</a>
+
+      <div class="group-label">Modules</div>
+      <a href="#mod-assessment"><span class="dot"></span>assessment.py</a>
+      <a href="#mod-sql-translator"><span class="dot"></span>sql_translator.py</a>
+      <a href="#mod-schema-translator"><span class="dot"></span>schema_translator.py</a>
+      <a href="#mod-data-transfer"><span class="dot"></span>data_transfer.py</a>
+      <a href="#mod-incremental-sync"><span class="dot"></span>incremental_sync.py</a>
+      <a href="#mod-data-validator"><span class="dot"></span>data_validator.py</a>
+      <a href="#mod-cutover-manager"><span class="dot"></span>cutover_manager.py</a>
+      <a href="#mod-migrator"><span class="dot"></span>migrator.py</a>
+      <a href="#mod-cli"><span class="dot"></span>cli.py</a>
+
+      <div class="group-label">Reference</div>
+      <a href="#config"><span class="dot"></span>Configuration</a>
+      <a href="#testing"><span class="dot"></span>Testing &amp; CI</a>
+      <a href="#types"><span class="dot"></span>Type Mapping</a>
+    </nav>
+  </aside>
+
+  <main id="main">
+    <section class="hero">
+      <div class="hero-inner">
+        <div class="pill"><span class="dot"></span>MIT Licensed &middot; Python 3.10+ &middot; Google Cloud native</div>
+        <h1>Snowflake → BigQuery, end to end.</h1>
+        <p class="lead">A complete migration accelerator covering assessment, SQL translation, schema creation,
+        bulk &amp; incremental transfer, validation, and zero-downtime cutover — built on Google's managed
+        migration services wherever possible.</p>
+        <div class="hero-ctas">
+          <a class="btn btn-primary" href="#quickstart">Quick Start</a>
+          <a class="btn btn-ghost" href="#mod-assessment">Browse Modules</a>
+        </div>
+        <div class="stat-row">
+          <div><strong>9</strong><span>Python modules</span></div>
+          <div><strong>7</strong><span>Lifecycle phases</span></div>
+          <div><strong>35+</strong><span>Unit tests</span></div>
+          <div><strong>1</strong><span>CLI entry point</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="overview">
+      <div class="container">
+        <div class="section-head">
+          <span class="kicker">Overview</span>
+          <h2>One toolkit, every phase of the migration</h2>
+          <p>Rather than hand-rolling every step, the toolkit leans on Google-provided services — BigQuery
+          Migration Service SQL translation, BigQuery Data Transfer Service, and Storage Transfer Service —
+          and wraps them in idempotent, retry-safe Python with structured logging and a single CLI.</p>
+        </div>
+        <div class="kv-grid">
+          <div class="kv">
+            <h5>Architecture</h5>
+            <ul>
+              <li><code>src/cli.py</code> — click entry point</li>
+              <li><code>src/migrator.py</code> — config + wave orchestration</li>
+              <li>Per-module clients for SF, BQ, GCS, DTS</li>
+            </ul>
+          </div>
+          <div class="kv">
+            <h5>Safety</h5>
+            <ul>
+              <li>Idempotent — safe to re-run any phase</li>
+              <li>State persisted to <code>migration_state.json</code></li>
+              <li>Validation gate blocks cutover on failure</li>
+            </ul>
+          </div>
+          <div class="kv">
+            <h5>Observability</h5>
+            <ul>
+              <li>Structured logging via <code>structlog</code>/<code>logging</code></li>
+              <li>Markdown reports per phase</li>
+              <li>Per-table progress tracking</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="quickstart">
+      <div class="container">
+        <div class="section-head">
+          <span class="kicker">Get started</span>
+          <h2>Quick Start</h2>
+          <p>Install dependencies, set credentials via environment variables, then drive the whole
+          migration through one CLI.</p>
+        </div>
+
+        <div class="steps">
+          <div class="step">
+            <div class="num">1</div>
+            <div>
+              <p style="color:var(--fg);margin-bottom:.4rem;font-weight:600;">Install &amp; configure</p>
+              <div class="codeblock">
+                <div class="bar"><span>bash</span><button class="copy-btn" data-copy>Copy</button></div>
+                <pre><code class="language-bash">pip install -r requirements.txt
+
+export SNOWFLAKE_ACCOUNT=myaccount
+export SNOWFLAKE_USER=myuser
+export SNOWFLAKE_PASSWORD=mypassword
+export GCP_PROJECT_ID=my-gcp-project
+export GCS_STAGING_BUCKET=my-migration-bucket</code></pre>
+              </div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="num">2</div>
+            <div>
+              <p style="color:var(--fg);margin-bottom:.4rem;font-weight:600;">Edit <code>config/migration_config.yaml</code></p>
+              <div class="codeblock">
+                <div class="bar"><span>yaml</span><button class="copy-btn" data-copy>Copy</button></div>
+                <pre><code class="language-yaml">tables:
+  - sf_table: analytics.public.users
+    bq_table: users
+    key_col: user_id
+    watermark_col: updated_at
+    wave: 1</code></pre>
+              </div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="num">3</div>
+            <div>
+              <p style="color:var(--fg);margin-bottom:.4rem;font-weight:600;">Run the lifecycle</p>
+              <div class="codeblock">
+                <div class="bar"><span>bash</span><button class="copy-btn" data-copy>Copy</button></div>
+                <pre><code class="language-bash">python -m src.cli assess
+python -m src.cli translate-sql
+python -m src.cli create-schema
+python -m src.cli transfer
+python -m src.cli sync
+python -m src.cli validate
+python -m src.cli cutover</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="lifecycle">
+      <div class="container">
+        <div class="section-head">
+          <span class="kicker">The pipeline</span>
+          <h2>Migration Lifecycle</h2>
+          <p>Every table moves through the same seven phases. The CLI mirrors this order exactly, and each
+          phase is safe to re-run independently thanks to state tracking in <code>migration_state.json</code>.</p>
+        </div>
+        <div class="lifecycle">
+          <div class="phase"><div class="num">1</div><h4>Assess</h4><small>assessment.py</small></div>
+          <div class="phase"><div class="num">2</div><h4>Translate SQL</h4><small>sql_translator.py</small></div>
+          <div class="phase"><div class="num">3</div><h4>Create Schema</h4><small>schema_translator.py</small></div>
+          <div class="phase"><div class="num">4</div><h4>Transfer Data</h4><small>data_transfer.py</small></div>
+          <div class="phase"><div class="num">5</div><h4>Incremental Sync</h4><small>incremental_sync.py</small></div>
+          <div class="phase"><div class="num">6</div><h4>Validate</h4><small>data_validator.py</small></div>
+          <div class="phase"><div class="num">7</div><h4>Cutover</h4><small>cutover_manager.py</small></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="modules">
+      <div class="container">
+        <div class="section-head">
+          <span class="kicker">Reference</span>
+          <h2>Module Documentation</h2>
+          <p>Every module under <code>src/</code> has a single responsibility and is importable without
+          side effects. Click a card or use the sidebar to jump to its full reference.</p>
+        </div>
+
+        <article class="module-detail" id="mod-assessment">
+          <h3><span class="badge">Phase 1 · Assess</span></h3>
+          <span class="file-path">src/assessment.py</span>
+          <p>Inventories Snowflake databases, schemas, tables, views, stored procedures, UDFs, tasks, and
+          streams. Estimates row counts and complexity, then groups objects into a dependency- and
+          size-aware migration wave plan.</p>
+          <div class="kv-grid">
+            <div class="kv">
+              <h5>Key classes / functions</h5>
+              <ul>
+                <li><code>SnowflakeAssessor.discover_tables()</code></li>
+                <li><code>SnowflakeAssessor.discover_views()</code></li>
+                <li><code>SnowflakeAssessor.discover_routines()</code></li>
+                <li><code>SnowflakeAssessor.discover_tasks_and_streams()</code></li>
+                <li><code>SnowflakeAssessor.build_wave_plan()</code></li>
+                <li><code>SnowflakeAssessor.generate_report()</code></li>
+              </ul>
+            </div>
+            <div class="kv">
+              <h5>Inputs / Outputs</h5>
+              <ul>
+                <li>In: Snowflake connection params, database/schema names</li>
+                <li>Out: <code>ObjectInventory</code> list, <code>MigrationWave</code> plan</li>
+                <li>Out: Markdown + JSON assessment report</li>
+              </ul>
+            </div>
+          </div>
+          <div class="codeblock">
+            <div class="bar"><span>python</span><button class="copy-btn" data-copy>Copy</button></div>
+            <pre><code class="language-python">assessor = SnowflakeAssessor(sf_conn_params={...})
+assessor.discover_tables(database="ANALYTICS")
+assessor.discover_views(database="ANALYTICS")
+plan = assessor.build_wave_plan(max_waves=5)
+print(assessor.generate_report(plan))</code></pre>
+          </div>
+        </article>
+
+        <article class="module-detail" id="mod-sql-translator">
+          <h3><span class="badge">Phase 2 · Translate SQL</span></h3>
+          <span class="file-path">src/sql_translator.py</span>
+          <p>Batch-translates Snowflake views, stored procedures, UDFs, and queries to BigQuery SQL using
+          Google's <strong>BigQuery Migration Service</strong> literal-translation API
+          (<code>google.cloud.bigquery_migration_v2</code>). Retries on rate limits with exponential
+          backoff and continues past per-object failures.</p>
+          <div class="kv-grid">
+            <div class="kv">
+              <h5>Key classes / functions</h5>
+              <ul>
+                <li><code>SnowflakeSqlTranslator.translate_batch()</code></li>
+                <li><code>SnowflakeSqlTranslator._translate_one()</code> — submits a <code>MigrationTask</code></li>
+                <li><code>SnowflakeSqlTranslator.generate_issues_report()</code></li>
+              </ul>
+            </div>
+            <div class="kv">
+              <h5>Inputs / Outputs</h5>
+              <ul>
+                <li>In: <code>TranslationUnit</code> (name, type, source SQL)</li>
+                <li>Out: <code>TranslationResult</code> with translated SQL + untranslated tokens</li>
+                <li>Out: Markdown translation issues report</li>
+              </ul>
+            </div>
+          </div>
+          <div class="codeblock">
+            <div class="bar"><span>python</span><button class="copy-btn" data-copy>Copy</button></div>
+            <pre><code class="language-python">translator = SnowflakeSqlTranslator(project_id="my-gcp-project")
+units = [TranslationUnit("vw_active_users", "view", "SELECT id FROM users")]
+results = translator.translate_batch(units)
+print(translator.generate_issues_report(results))</code></pre>
+          </div>
+        </article>
+
+        <article class="module-detail" id="mod-schema-translator">
+          <h3><span class="badge">Phase 3 · Create Schema</span></h3>
+          <span class="file-path">src/schema_translator.py</span>
+          <p>Maps Snowflake DDL types to BigQuery equivalents and creates target tables, with auto-detected
+          clustering and partitioning. Delegates view/procedure/UDF DDL bodies to
+          <code>sql_translator.SnowflakeSqlTranslator</code> for SQL-level translation.</p>
+          <div class="kv-grid">
+            <div class="kv">
+              <h5>Key classes / functions</h5>
+              <ul>
+                <li><code>translate_type()</code> — NUMBER/VARIANT/TIMESTAMP_NTZ mapping</li>
+                <li><code>fetch_snowflake_columns()</code></li>
+                <li><code>detect_clustering()</code> — reads Snowflake cluster keys</li>
+                <li><code>translate_view_ddl()</code> / <code>translate_routine_ddl()</code></li>
+                <li><code>create_bq_table()</code> / <code>translate_and_create()</code></li>
+              </ul>
+            </div>
+            <div class="kv">
+              <h5>Inputs / Outputs</h5>
+              <ul>
+                <li>In: Snowflake column metadata, fully-qualified table name</li>
+                <li>Out: <code>bigquery.Table</code> created in target dataset</li>
+                <li>Out: JSON schema export for review</li>
+              </ul>
+            </div>
+          </div>
+          <div class="codeblock">
+            <div class="bar"><span>python</span><button class="copy-btn" data-copy>Copy</button></div>
+            <pre><code class="language-python">translator = SnowflakeToBigQueryTranslator(
+    project_id="my-gcp-project", dataset_id="migrated_dataset",
+    sf_conn_params={...},
+)
+cols = translator.fetch_snowflake_columns("analytics.public.users")
+cluster_cols = translator.detect_clustering("analytics.public.users")
+translator.translate_and_create(cols, table_name="users", cluster_cols=cluster_cols)</code></pre>
+          </div>
+        </article>
+
+        <article class="module-detail" id="mod-data-transfer">
+          <h3><span class="badge">Phase 4 · Transfer Data</span></h3>
+          <span class="file-path">src/data_transfer.py</span>
+          <p>Bulk-loads Snowflake tables into BigQuery via GCS staging (export → load job), and configures
+          <strong>BigQuery Data Transfer Service</strong> for recurring, scheduled syncs. Retries with
+          backoff and tracks per-table progress for resumability.</p>
+          <div class="kv-grid">
+            <div class="kv">
+              <h5>Key classes / functions</h5>
+              <ul>
+                <li><code>export_table_to_gcs()</code> — Snowflake <code>COPY INTO</code></li>
+                <li><code>load_gcs_to_bq()</code> — BQ load job</li>
+                <li><code>backfill_table()</code> / <code>backfill_all()</code></li>
+                <li><code>create_dts_transfer_config()</code></li>
+              </ul>
+            </div>
+            <div class="kv">
+              <h5>Inputs / Outputs</h5>
+              <ul>
+                <li>In: source/target table pairs, GCS bucket</li>
+                <li>Out: <code>TransferProgress</code> per table</li>
+                <li>Out: Markdown progress report</li>
+              </ul>
+            </div>
+          </div>
+          <div class="codeblock">
+            <div class="bar"><span>python</span><button class="copy-btn" data-copy>Copy</button></div>
+            <pre><code class="language-python">orchestrator = DataTransferOrchestrator(
+    sf_conn_params={...}, gcp_project="my-gcp-project",
+    gcs_bucket="my-migration-bucket", bq_dataset="migrated_dataset",
+)
+orchestrator.backfill_all([{"sf_table": "analytics.public.users", "bq_table": "users"}])
+print(orchestrator.progress_report())</code></pre>
+          </div>
+        </article>
+
+        <article class="module-detail" id="mod-incremental-sync">
+          <h3><span class="badge">Phase 5 · Incremental Sync</span></h3>
+          <span class="file-path">src/incremental_sync.py</span>
+          <p>CDC/watermark-based sync that MERGEs Snowflake changes into BigQuery. Prefers a Snowflake
+          <code>STREAM</code>, falls back to an <code>updated_at</code> watermark, and falls back again to
+          a full reload with a warning when neither is available.</p>
+          <div class="kv-grid">
+            <div class="kv">
+              <h5>Key classes / functions</h5>
+              <ul>
+                <li><code>sync_table()</code> — strategy dispatcher</li>
+                <li><code>sync_via_watermark()</code> / <code>sync_via_stream()</code></li>
+                <li><code>full_reload()</code> — fallback strategy</li>
+                <li><code>_merge_rows_into_bq()</code> — idempotent MERGE</li>
+              </ul>
+            </div>
+            <div class="kv">
+              <h5>Inputs / Outputs</h5>
+              <ul>
+                <li>In: key column, optional watermark column or stream name</li>
+                <li>Out: <code>SyncResult</code> (strategy, rows synced, watermark)</li>
+              </ul>
+            </div>
+          </div>
+          <div class="codeblock">
+            <div class="bar"><span>python</span><button class="copy-btn" data-copy>Copy</button></div>
+            <pre><code class="language-python">syncer = IncrementalSyncer(sf_conn_params={...}, bq_project="my-gcp-project", bq_dataset="migrated_dataset")
+result = syncer.sync_table(
+    sf_table="analytics.public.orders", bq_table="orders",
+    key_col="order_id", watermark_col="updated_at",
+)</code></pre>
+          </div>
+        </article>
+
+        <article class="module-detail" id="mod-data-validator">
+          <h3><span class="badge">Phase 6 · Validate</span></h3>
+          <span class="file-path">src/data_validator.py</span>
+          <p>Row count, MD5 checksum, null-count, and column-type parity checks between Snowflake and
+          BigQuery. Automatically switches to sampling-based checksums above a configurable row threshold
+          for very large tables.</p>
+          <div class="kv-grid">
+            <div class="kv">
+              <h5>Key classes / functions</h5>
+              <ul>
+                <li><code>validate_table()</code> / <code>validate_all_tables()</code></li>
+                <li><code>get_sampled_checksum()</code> — large-table sampling</li>
+                <li><code>check_column_types()</code></li>
+                <li><code>generate_report()</code> / <code>generate_summary_dashboard()</code></li>
+              </ul>
+            </div>
+            <div class="kv">
+              <h5>Inputs / Outputs</h5>
+              <ul>
+                <li>In: table pairs + key column</li>
+                <li>Out: <code>ValidationResult</code> per table</li>
+                <li>Out: Markdown report + summary dashboard</li>
+              </ul>
+            </div>
+          </div>
+          <div class="codeblock">
+            <div class="bar"><span>python</span><button class="copy-btn" data-copy>Copy</button></div>
+            <pre><code class="language-python">validator = MigrationValidator(sf_conn_params={...}, bq_project="my-gcp-project", bq_dataset="migrated_dataset")
+results = validator.validate_all_tables([{"sf_table": "analytics.public.users", "bq_table": "users", "key_col": "user_id"}])
+print(validator.generate_summary_dashboard(results))</code></pre>
+          </div>
+        </article>
+
+        <article class="module-detail" id="mod-cutover-manager">
+          <h3><span class="badge">Phase 7 · Cutover</span></h3>
+          <span class="file-path">src/cutover_manager.py</span>
+          <p>Orchestrates the dual-write cutover window, gates the final switch to BigQuery behind a
+          validation callback, and supports rollback to Snowflake at any phase. Status is persisted to
+          <code>migration_state.json</code> and rendered as a runbook.</p>
+          <div class="kv-grid">
+            <div class="kv">
+              <h5>Key classes / functions</h5>
+              <ul>
+                <li><code>start_dual_write()</code> — idempotent phase entry</li>
+                <li><code>run_validation_gate()</code></li>
+                <li><code>switch_to_bigquery()</code> — refuses without a pass</li>
+                <li><code>rollback()</code> / <code>generate_runbook()</code></li>
+              </ul>
+            </div>
+            <div class="kv">
+              <h5>Inputs / Outputs</h5>
+              <ul>
+                <li>In: table name, validation callback</li>
+                <li>Out: <code>CutoverStatus</code> (phase, timestamps, notes)</li>
+                <li>Out: Markdown cutover runbook</li>
+              </ul>
+            </div>
+          </div>
+          <div class="codeblock">
+            <div class="bar"><span>python</span><button class="copy-btn" data-copy>Copy</button></div>
+            <pre><code class="language-python">manager = CutoverManager(state_path="migration_state.json")
+status = manager.cutover_table("users", validate_fn=lambda t: validator.validate_table(...).passed)
+print(manager.generate_runbook())</code></pre>
+          </div>
+        </article>
+
+        <article class="module-detail" id="mod-migrator">
+          <h3><span class="badge">Orchestration</span></h3>
+          <span class="file-path">src/migrator.py</span>
+          <p>Loads <code>config/migration_config.yaml</code>, resolves secrets from environment variables,
+          and drives per-wave execution with state persisted to <code>migration_state.json</code> — so any
+          phase can be safely re-run without redoing completed tables.</p>
+          <div class="kv-grid">
+            <div class="kv">
+              <h5>Key classes / functions</h5>
+              <ul>
+                <li><code>load_config()</code></li>
+                <li><code>MigrationState.mark_complete()</code> / <code>.is_complete()</code></li>
+                <li><code>Migrator.run_phase_for_wave()</code></li>
+              </ul>
+            </div>
+            <div class="kv">
+              <h5>Inputs / Outputs</h5>
+              <ul>
+                <li>In: <code>migration_config.yaml</code> path</li>
+                <li>Out: <code>MigrationConfig</code>, wave-grouped <code>TableConfig</code> list</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <article class="module-detail" id="mod-cli">
+          <h3><span class="badge">Entry point</span></h3>
+          <span class="file-path">src/cli.py</span>
+          <p>Click-based CLI tying every module together. Run with
+          <code>python -m src.cli &lt;command&gt;</code>, scoped by <code>--config</code>.</p>
+          <table>
+            <thead><tr><th>Command</th><th>Module</th><th>Output</th></tr></thead>
+            <tbody>
+              <tr><td><code>assess</code></td><td>assessment.py</td><td>assessment_report.md</td></tr>
+              <tr><td><code>translate-sql</code></td><td>sql_translator.py</td><td>translation_issues.md</td></tr>
+              <tr><td><code>create-schema</code></td><td>schema_translator.py</td><td>BigQuery tables</td></tr>
+              <tr><td><code>transfer</code></td><td>data_transfer.py</td><td>Loaded BigQuery tables</td></tr>
+              <tr><td><code>sync</code></td><td>incremental_sync.py</td><td>Merged rows</td></tr>
+              <tr><td><code>validate</code></td><td>data_validator.py</td><td>validation_report.md</td></tr>
+              <tr><td><code>cutover</code></td><td>cutover_manager.py</td><td>cutover_runbook.md</td></tr>
+            </tbody>
+          </table>
+        </article>
+      </div>
+    </section>
+
+    <section id="config">
+      <div class="container">
+        <div class="section-head">
+          <span class="kicker">Reference</span>
+          <h2>Configuration</h2>
+          <p>Every connection parameter is resolved from an environment variable name declared in YAML —
+          no secrets ever live in the config file itself.</p>
+        </div>
+        <div class="codeblock">
+          <div class="bar"><span>config/migration_config.yaml</span><button class="copy-btn" data-copy>Copy</button></div>
+          <pre><code class="language-yaml">snowflake:
+  account_env: SNOWFLAKE_ACCOUNT
+  user_env: SNOWFLAKE_USER
+  password_env: SNOWFLAKE_PASSWORD
+  database: ANALYTICS
+bigquery:
+  project_id_env: GCP_PROJECT_ID
+  dataset: migrated_dataset
+tables:
+  - sf_table: analytics.public.users
+    bq_table: users
+    key_col: user_id
+    watermark_col: updated_at
+    wave: 1</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section id="testing">
+      <div class="container">
+        <div class="section-head">
+          <span class="kicker">Reference</span>
+          <h2>Testing &amp; CI</h2>
+          <p>Every module has pytest unit tests with mocked Snowflake/BigQuery/GCS clients — no live
+          credentials required to run the suite. GitHub Actions runs tests on every push and pull request.</p>
+        </div>
+        <div class="codeblock">
+          <div class="bar"><span>bash</span><button class="copy-btn" data-copy>Copy</button></div>
+          <pre><code class="language-bash">pytest tests/ -v
+make test</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section id="types">
+      <div class="container">
+        <div class="section-head">
+          <span class="kicker">Reference</span>
+          <h2>Data Type Mapping</h2>
+          <p>Core Snowflake → BigQuery type translations applied by <code>schema_translator.py</code>.</p>
+        </div>
+        <table>
+          <thead><tr><th>Snowflake</th><th>BigQuery</th></tr></thead>
+          <tbody>
+            <tr><td><code>NUMBER(p,0)</code></td><td><code>INT64</code></td></tr>
+            <tr><td><code>NUMBER(p,s)</code></td><td><code>NUMERIC</code></td></tr>
+            <tr><td><code>VARCHAR</code> / <code>TEXT</code></td><td><code>STRING</code></td></tr>
+            <tr><td><code>TIMESTAMP_NTZ</code></td><td><code>DATETIME</code></td></tr>
+            <tr><td><code>TIMESTAMP_LTZ</code></td><td><code>TIMESTAMP</code></td></tr>
+            <tr><td><code>VARIANT</code> / <code>OBJECT</code></td><td><code>JSON</code></td></tr>
+            <tr><td><code>BOOLEAN</code></td><td><code>BOOL</code></td></tr>
+            <tr><td><code>GEOGRAPHY</code></td><td><code>GEOGRAPHY</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer>
+      <p>MIT Licensed · Built for Google Cloud · <a href="https://github.com/" target="_blank" rel="noopener">View on GitHub</a></p>
+    </footer>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/yaml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+<script>
+  if (window.hljs) { hljs.highlightAll(); }
+
+  // Mobile sidebar toggle
+  var toggle = document.getElementById('menuToggle');
+  var sidebar = document.getElementById('sidebar');
+  if (toggle && sidebar) {
+    toggle.addEventListener('click', function () {
+      var isOpen = sidebar.classList.toggle('open');
+      toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    });
+    sidebar.querySelectorAll('a').forEach(function (link) {
+      link.addEventListener('click', function () {
+        sidebar.classList.remove('open');
+        toggle.setAttribute('aria-expanded', 'false');
+      });
+    });
+  }
+
+  // Copy-to-clipboard for code blocks
+  document.querySelectorAll('[data-copy]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var code = btn.closest('.codeblock').querySelector('code');
+      navigator.clipboard.writeText(code.textContent).then(function () {
+        var original = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(function () { btn.textContent = original; }, 1500);
+      });
+    });
+  });
+
+  // Active-link tracking via IntersectionObserver
+  var sections = document.querySelectorAll('main section, main article[id]');
+  var links = document.querySelectorAll('nav.toc a');
+  if ('IntersectionObserver' in window) {
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          var id = entry.target.id;
+          links.forEach(function (l) {
+            l.classList.toggle('active', l.getAttribute('href') === '#' + id);
+          });
+        }
+      });
+    }, { rootMargin: '-30% 0px -60% 0px' });
+    sections.forEach(function (s) { observer.observe(s); });
+  }
+</script>
+</body>
+</html>

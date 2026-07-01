@@ -1,0 +1,47 @@
+# Snowflake -> BigQuery migration configuration.
+# Connection secrets are read from environment variables, never from this file.
+
+snowflake:
+  account_env: SNOWFLAKE_ACCOUNT
+  user_env: SNOWFLAKE_USER
+  password_env: SNOWFLAKE_PASSWORD
+  database: ANALYTICS
+  schemas:
+    - PUBLIC
+
+bigquery:
+  project_id_env: GCP_PROJECT_ID
+  dataset: migrated_dataset
+  location: US
+
+gcs:
+  bucket_env: GCS_STAGING_BUCKET
+
+tables:
+  - sf_table: analytics.public.users
+    bq_table: users
+    key_col: user_id
+    watermark_col: updated_at
+    wave: 1
+  - sf_table: analytics.public.orders
+    bq_table: orders
+    key_col: order_id
+    watermark_col: updated_at
+    wave: 2
+  - sf_table: analytics.public.sessions
+    bq_table: sessions
+    key_col: session_id
+    watermark_col: null
+    wave: 3
+
+transfer:
+  file_format: PARQUET
+  dts_schedule: "every 24 hours"
+
+validation:
+  sample_large_tables_over_rows: 50000000
+  sample_size: 100000
+
+cutover:
+  state_file: migration_state.json
+  require_validation_pass: true
