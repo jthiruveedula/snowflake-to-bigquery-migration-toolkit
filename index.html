@@ -19,7 +19,7 @@
     --border-strong:#3b4a66;
     --fg:#f8fafc;
     --fg-muted:#9aa7bd;
-    --fg-dim:#6b7a93;
+    --fg-dim:#7c8aa3;
     --accent-blue:#3b82f6;
     --accent-cyan:#22d3ee;
     --accent-green:#22c55e;
@@ -34,7 +34,9 @@
   }
 
   *{box-sizing:border-box;}
-  html{scroll-behavior:smooth;}
+  @media (prefers-reduced-motion:no-preference){
+    html{scroll-behavior:smooth;}
+  }
   body{
     margin:0;
     background:var(--bg);
@@ -203,18 +205,6 @@
   }
   .copy-btn:hover{color:var(--fg);border-color:var(--accent-cyan);}
 
-  /* ---------- Module cards ---------- */
-  .modules-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1.2rem;}
-  .module-card{
-    background:var(--surface-glass);backdrop-filter:blur(10px);
-    border:1px solid var(--border);border-radius:var(--radius);padding:1.4rem;
-    transition:transform .2s ease, border-color .2s ease, box-shadow .2s ease;
-    cursor:pointer;
-  }
-  .module-card:hover{transform:translateY(-4px);border-color:var(--accent-blue);box-shadow:0 10px 30px rgba(59,130,246,0.15);}
-  .module-card .file{font-family:var(--font-mono);font-size:.78rem;color:var(--accent-cyan);}
-  .module-card h3{font-size:1.1rem;margin:.3rem 0 .5rem;}
-  .module-card p{font-size:.88rem;margin-bottom:.8rem;}
   .badge{
     display:inline-block;font-size:.68rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;
     padding:.2rem .55rem;border-radius:999px;border:1px solid var(--border-strong);color:var(--fg-muted);
