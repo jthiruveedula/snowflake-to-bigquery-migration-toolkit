@@ -10,7 +10,10 @@ import logging
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
+import snowflake.connector
 from google.cloud import bigquery
+
+from src.sql_translator import SnowflakeSqlTranslator, TranslationUnit
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -80,11 +83,14 @@ class TableSchema:
 class SnowflakeToBigQueryTranslator:
     """Translates Snowflake table schemas to BigQuery table definitions."""
 
-    def __init__(self, project_id: str, dataset_id: str):
+    def __init__(self, project_id: str, dataset_id: str, sf_conn_params: Optional[dict] = None):
         self.project_id = project_id
         self.dataset_id = dataset_id
         self.bq_client = bigquery.Client(project=project_id)
         self.translation_errors: List[str] = []
+        self.sf_conn_params = sf_conn_params
+        self._sf_conn: Optional[snowflake.connector.SnowflakeConnection] = None
+        self.sql_translator = SnowflakeSqlTranslator(project_id=project_id)
 
     def translate_type(self, sf_type: str) -> Tuple[str, Optional[int], Optional[int]]:
         """Map a Snowflake type string to a BigQuery type."""
@@ -195,6 +201,63 @@ class SnowflakeToBigQueryTranslator:
             partition_col=partition_col,
             cluster_cols=cluster_cols,
         )
+
+    def _snowflake_conn(self) -> snowflake.connector.SnowflakeConnection:
+        if not self.sf_conn_params:
+            raise RuntimeError("SnowflakeToBigQueryTranslator was not given sf_conn_params")
+        if self._sf_conn is None:
+            self._sf_conn = snowflake.connector.connect(**self.sf_conn_params)
+        return self._sf_conn
+
+    def fetch_snowflake_columns(self, sf_table: str) -> List[dict]:
+        """Look up column metadata for a fully-qualified Snowflake table from
+        INFORMATION_SCHEMA.COLUMNS."""
+        database, schema, table = sf_table.split(".")
+        cur = self._snowflake_conn().cursor(snowflake.connector.DictCursor)
+        cur.execute(
+            f"""
+            SELECT COLUMN_NAME as column_name, DATA_TYPE as data_type,
+                   IS_NULLABLE as is_nullable, COLUMN_DEFAULT as column_default,
+                   COMMENT as comment
+            FROM {database}.INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = '{schema.upper()}' AND TABLE_NAME = '{table.upper()}'
+            ORDER BY ORDINAL_POSITION
+            """
+        )
+        return cur.fetchall()
+
+    def detect_clustering(self, sf_table: str) -> List[str]:
+        """Read Snowflake's clustering key DDL and map it to BigQuery cluster columns
+        (BQ supports at most 4)."""
+        database, schema, table = sf_table.split(".")
+        cur = self._snowflake_conn().cursor(snowflake.connector.DictCursor)
+        cur.execute(f"SHOW TABLES LIKE '{table.upper()}' IN SCHEMA {database}.{schema}")
+        rows = cur.fetchall()
+        if not rows:
+            return []
+        clustering_ddl = rows[0].get("cluster_by", "") or ""
+        # e.g. "LINEAR(COL_A, COL_B)" -> ["col_a", "col_b"]
+        match = re.search(r"\((.*)\)", clustering_ddl)
+        if not match:
+            return []
+        cols = [c.strip().strip('"').lower() for c in match.group(1).split(",")]
+        return cols[:4]
+
+    def translate_view_ddl(self, view_name: str, view_sql: str) -> Tuple[Optional[str], List[str]]:
+        """Translate a Snowflake VIEW definition to BigQuery SQL via the SQL translator."""
+        result = self.sql_translator._translate_one(
+            TranslationUnit(object_name=view_name, object_type="view", source_sql=view_sql)
+        )
+        return result.translated_sql, result.untranslated_tokens
+
+    def translate_routine_ddl(
+        self, routine_name: str, routine_sql: str, routine_type: str = "procedure"
+    ) -> Tuple[Optional[str], List[str]]:
+        """Translate a Snowflake stored procedure or UDF body to BigQuery SQL."""
+        result = self.sql_translator._translate_one(
+            TranslationUnit(object_name=routine_name, object_type=routine_type, source_sql=routine_sql)
+        )
+        return result.translated_sql, result.untranslated_tokens
 
     def export_schema_json(self, table_schema: TableSchema, output_path: str) -> None:
         """Export the translated schema to a JSON file for review."""
